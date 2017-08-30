@@ -7,8 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package kafka
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,8 +28,31 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var mockRetryOptions = localconfig.Retry{
+	ShortInterval: 50 * time.Millisecond,
+	ShortTotal:    100 * time.Millisecond,
+	LongInterval:  60 * time.Millisecond,
+	LongTotal:     120 * time.Millisecond,
+	NetworkTimeouts: localconfig.NetworkTimeouts{
+		DialTimeout:  40 * time.Millisecond,
+		ReadTimeout:  40 * time.Millisecond,
+		WriteTimeout: 40 * time.Millisecond,
+	},
+	Metadata: localconfig.Metadata{
+		RetryMax:     2,
+		RetryBackoff: 40 * time.Millisecond,
+	},
+	Producer: localconfig.Producer{
+		RetryMax:     2,
+		RetryBackoff: 40 * time.Millisecond,
+	},
+	Consumer: localconfig.Consumer{
+		RetryBackoff: 40 * time.Millisecond,
+	},
+}
+
 func init() {
-	mockLocalConfig = newMockLocalConfig(false, 50, 200, false)
+	mockLocalConfig = newMockLocalConfig(false, mockRetryOptions, false)
 	mockBrokerConfig = newMockBrokerConfig(mockLocalConfig.General.TLS, mockLocalConfig.Kafka.Retry, mockLocalConfig.Kafka.Version, defaultPartition)
 	mockConsenter = newMockConsenter(mockBrokerConfig, mockLocalConfig.General.TLS, mockLocalConfig.Kafka.Retry, mockLocalConfig.Kafka.Version)
 	setupTestLogging("ERROR", mockLocalConfig.Kafka.Verbose)
@@ -44,7 +69,7 @@ func TestHandleChain(t *testing.T) {
 	newestOffset := int64(5)
 	message := sarama.StringEncoder("messageFoo")
 
-	mockChannel := newChannel("channelFoo", defaultPartition)
+	mockChannel := newChannel(channelNameForTest(t), defaultPartition)
 
 	mockBroker := sarama.NewMockBroker(t, 0)
 	mockBroker.SetHandlerByMap(map[string]sarama.MockResponse{
@@ -90,7 +115,6 @@ func extractEncodedOffset(marshalledOrdererMetadata []byte) int64 {
 func newMockBrokerConfig(tlsConfig localconfig.TLS, retryOptions localconfig.Retry, kafkaVersion sarama.KafkaVersion, chosenStaticPartition int32) *sarama.Config {
 	brokerConfig := newBrokerConfig(tlsConfig, retryOptions, kafkaVersion, chosenStaticPartition)
 	brokerConfig.ClientID = "test"
-	brokerConfig.Producer.MaxMessageBytes-- // FIXME https://jira.hyperledger.org/browse/FAB-4083
 	return brokerConfig
 }
 
@@ -113,7 +137,7 @@ func newMockEnvelope(content string) *cb.Envelope {
 	return &cb.Envelope{Payload: []byte(content)}
 }
 
-func newMockLocalConfig(enableTLS bool, retryPeriod int, retryStop int, verboseLog bool) *localconfig.TopLevel {
+func newMockLocalConfig(enableTLS bool, retryOptions localconfig.Retry, verboseLog bool) *localconfig.TopLevel {
 	return &localconfig.TopLevel{
 		General: localconfig.General{
 			TLS: localconfig.TLS{
@@ -121,10 +145,7 @@ func newMockLocalConfig(enableTLS bool, retryPeriod int, retryStop int, verboseL
 			},
 		},
 		Kafka: localconfig.Kafka{
-			Retry: localconfig.Retry{
-				Period: time.Duration(retryPeriod) * time.Millisecond,
-				Stop:   time.Duration(retryStop) * time.Millisecond,
-			},
+			Retry:   retryOptions,
 			Verbose: verboseLog,
 			Version: sarama.V0_9_0_1,
 		},
@@ -151,4 +172,9 @@ func syncQueueMessage(message *cb.Envelope, chain *chainImpl, mockBlockcutter *m
 func tamperBytes(original []byte) []byte {
 	byteCount := len(original)
 	return original[:byteCount-1]
+}
+
+func channelNameForTest(t *testing.T) string {
+	name := strings.Split(fmt.Sprint(t), " ")[18] // w/golang 1.8, use t.Name()
+	return fmt.Sprintf("%s.channel", strings.Replace(strings.ToLower(name), "/", ".", -1))
 }

@@ -34,7 +34,7 @@ import (
 
 // Consenter defines the backing ordering mechanism
 type Consenter interface {
-	// HandleChain should create a return a reference to a Chain for the given set of resources
+	// HandleChain should create and return a reference to a Chain for the given set of resources
 	// It will only be invoked for a given chain once per process.  In general, errors will be treated
 	// as irrecoverable and cause system shutdown.  See the description of Chain for more details
 	// The second argument to HandleChain is a pointer to the metadata stored on the `ORDERER` slot of
@@ -50,8 +50,13 @@ type Consenter interface {
 // 1. Messages are ordered into a stream, the stream is cut into blocks, the blocks are committed (solo, kafka)
 // 2. Messages are cut into blocks, the blocks are ordered, then the blocks are committed (sbft)
 type Chain interface {
-	// Enqueue accepts a message and returns true on acceptance, or false on shutdown
+	// Enqueue accepts a message and returns true on acceptance, or false on failure
 	Enqueue(env *cb.Envelope) bool
+
+	// Errored returns a channel which will close when an error has occurred
+	// This is especially useful for the Deliver client, who must terminate waiting
+	// clients when the consenter is not up to date
+	Errored() <-chan struct{}
 
 	// Start should allocate whatever resources are needed for staying up to date with the chain
 	// Typically, this involves creating a thread which reads from the ordering source, passes those
@@ -84,8 +89,14 @@ type ChainSupport interface {
 	// Reader returns the chain Reader for the chain
 	Reader() ledger.Reader
 
+	// Errored returns whether the backing consenter has errored
+	Errored() <-chan struct{}
+
 	broadcast.Support
 	ConsenterSupport
+
+	// Sequence returns the current config sequence number
+	Sequence() uint64
 
 	// ProposeConfigUpdate applies a CONFIG_UPDATE to an existing config to produce a *cb.ConfigEnvelope
 	ProposeConfigUpdate(env *cb.Envelope) (*cb.ConfigEnvelope, error)
@@ -157,7 +168,7 @@ func newChainSupport(
 func createStandardFilters(ledgerResources *ledgerResources) *filter.RuleSet {
 	return filter.NewRuleSet([]filter.Rule{
 		filter.EmptyRejectRule,
-		sizefilter.MaxBytesRule(ledgerResources.SharedConfig().BatchSize().AbsoluteMaxBytes),
+		sizefilter.MaxBytesRule(ledgerResources.SharedConfig()),
 		sigfilter.New(policies.ChannelWriters, ledgerResources.PolicyManager()),
 		configtxfilter.NewFilter(ledgerResources),
 		filter.AcceptRule,
@@ -169,7 +180,7 @@ func createStandardFilters(ledgerResources *ledgerResources) *filter.RuleSet {
 func createSystemChainFilters(ml *multiLedger, ledgerResources *ledgerResources) *filter.RuleSet {
 	return filter.NewRuleSet([]filter.Rule{
 		filter.EmptyRejectRule,
-		sizefilter.MaxBytesRule(ledgerResources.SharedConfig().BatchSize().AbsoluteMaxBytes),
+		sizefilter.MaxBytesRule(ledgerResources.SharedConfig()),
 		sigfilter.New(policies.ChannelWriters, ledgerResources.PolicyManager()),
 		newSystemChainFilter(ledgerResources, ml),
 		configtxfilter.NewFilter(ledgerResources),
@@ -203,6 +214,10 @@ func (cs *chainSupport) Reader() ledger.Reader {
 
 func (cs *chainSupport) Enqueue(env *cb.Envelope) bool {
 	return cs.chain.Enqueue(env)
+}
+
+func (cs *chainSupport) Errored() <-chan struct{} {
+	return cs.chain.Errored()
 }
 
 func (cs *chainSupport) CreateNextBlock(messages []*cb.Envelope) *cb.Block {

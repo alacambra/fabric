@@ -249,7 +249,11 @@ func (gc *gossipChannel) GetPeers() []discovery.NetworkMember {
 }
 
 func (gc *gossipChannel) requestStateInfo() {
-	req := gc.createStateInfoRequest().NoopSign()
+	req, err := gc.createStateInfoRequest()
+	if err != nil {
+		gc.logger.Warning("Failed creating SignedGossipMessage:", err)
+		return
+	}
 	endpoints := filter.SelectPeers(gc.GetConf().PullPeerNum, gc.GetMembership(), gc.IsMemberInChan)
 	gc.Send(req, endpoints...)
 }
@@ -416,6 +420,10 @@ func (gc *gossipChannel) HandleMessage(msg proto.ReceivedMessage) {
 				gc.logger.Warning("Payload is empty, got it from", msg.GetConnectionInfo().ID)
 				return
 			}
+			// Would this block go into the message store if it was verified?
+			if !gc.blockMsgStore.CheckValid(msg.GetGossipMessage()) {
+				return
+			}
 			if !gc.verifyBlock(m.GossipMessage, msg.GetConnectionInfo().ID) {
 				gc.logger.Warning("Failed verifying block", m.GetDataMsg().Payload.SeqNum)
 				return
@@ -462,6 +470,10 @@ func (gc *gossipChannel) HandleMessage(msg proto.ReceivedMessage) {
 				}
 				if !bytes.Equal(gMsg.Channel, []byte(gc.chainID)) {
 					gc.logger.Warning("DataUpdate message contains item with channel", gMsg.Channel, "but should be", gc.chainID)
+					return
+				}
+				// Would this block go into the message store if it was verified?
+				if !gc.blockMsgStore.CheckValid(msg.GetGossipMessage()) {
 					return
 				}
 				if !gc.verifyBlock(gMsg.GossipMessage, msg.GetConnectionInfo().ID) {
@@ -636,7 +648,7 @@ func (gc *gossipChannel) verifyMsg(msg proto.ReceivedMessage) bool {
 	return true
 }
 
-func (gc *gossipChannel) createStateInfoRequest() *proto.SignedGossipMessage {
+func (gc *gossipChannel) createStateInfoRequest() (*proto.SignedGossipMessage, error) {
 	return (&proto.GossipMessage{
 		Tag:   proto.GossipMessage_CHAN_OR_ORG,
 		Nonce: 0,

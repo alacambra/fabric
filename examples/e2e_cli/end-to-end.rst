@@ -31,7 +31,15 @@ Prerequisites
 On Windows machines you will also need the following which provides a better alternative to the Windows command prompt:
 
 - `Git Bash <https://git-scm.com/downloads>`__
-- `make for MinGW <http://sourceforge.net/projects/mingw/files/MinGW/Extension/make/make-3.82.90-cvs/make-3.82.90-2-mingw32-cvs-20120902-bin.tar.lzma>`__ to be added to Git Bash
+
+.. note:: On older versions of Windows, such as Windows 7, you
+          typically get this as part of installing Docker
+          Toolbox. However experience has shown this to be a poor
+          development environment with limited functionality. It is
+          suitable to run docker based scenarios, such as
+          :doc:`getting_started`, but you may not be able to find a
+          suitable ``make`` command to successfuly go through the
+          scenario described here.
 
 Setting the $GOPATH
 ^^^^^^^^^^^^^^^^^^^
@@ -899,3 +907,7 @@ back and recreate your channel artifacts.
 
 - If you continue to see errors, share your logs on the **# fabric-questions**
   channel on `Hyperledger Rocket Chat <https://chat.hyperledger.org/home>`__.
+
+.. Licensed under Creative Commons Attribution 4.0 International License
+   https://creativecommons.org/licenses/by/4.0/
+   

@@ -22,11 +22,17 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/msp"
-
-	"github.com/golang/protobuf/proto"
 	cb "github.com/hyperledger/fabric/protos/common"
 	mb "github.com/hyperledger/fabric/protos/msp"
+
+	"github.com/golang/protobuf/proto"
+	logging "github.com/op/go-logging"
+	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	logging.SetLevel(logging.DEBUG, "")
+}
 
 var invalidSignature = []byte("badsigned")
 
@@ -167,4 +173,9 @@ func TestNegatively(t *testing.T) {
 	if err == nil {
 		t.Fatal("Should have errored compiling because the Type field was nil")
 	}
+}
+
+func TestNilSignaturePolicyEnvelope(t *testing.T) {
+	_, err := compile(nil, nil, &mockDeserializer{})
+	assert.Error(t, err, "Fail to compile")
 }

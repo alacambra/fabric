@@ -1,19 +1,8 @@
 /*
-Copyright IBM Corp. 2016 All Rights Reserved.
+Copyright IBM Corp. All Rights Reserved.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-                 http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: Apache-2.0
 */
-
 package multichain
 
 import (
@@ -57,7 +46,11 @@ type configResources struct {
 }
 
 func (cr *configResources) SharedConfig() config.Orderer {
-	return cr.OrdererConfig()
+	oc, ok := cr.OrdererConfig()
+	if !ok {
+		logger.Panicf("[channel %s] has no orderer configuration", cr.ChainID())
+	}
+	return oc
 }
 
 type ledgerResources struct {
@@ -105,7 +98,7 @@ func NewManagerImpl(ledgerFactory ledger.Factory, consenters map[string]Consente
 		}
 		configTx := getConfigTx(rl)
 		if configTx == nil {
-			logger.Panicf("Could not find config transaction for chain %s", chainID)
+			logger.Panic("Programming error, configTx should never be nil here")
 		}
 		ledgerResources := ml.newLedgerResources(configTx)
 		chainID := ledgerResources.ChainID()
@@ -119,7 +112,7 @@ func NewManagerImpl(ledgerFactory ledger.Factory, consenters map[string]Consente
 				consenters,
 				signer)
 			logger.Infof("Starting with system channel %s and orderer type %s", chainID, chain.SharedConfig().ConsensusType())
-			ml.chains[string(chainID)] = chain
+			ml.chains[chainID] = chain
 			ml.systemChannelID = chainID
 			ml.systemChannel = chain
 			// We delay starting this chain, as it might try to copy and replace the chains map via newChain before the map is fully built
@@ -130,7 +123,7 @@ func NewManagerImpl(ledgerFactory ledger.Factory, consenters map[string]Consente
 				ledgerResources,
 				consenters,
 				signer)
-			ml.chains[string(chainID)] = chain
+			ml.chains[chainID] = chain
 			chain.start()
 		}
 
@@ -209,9 +202,18 @@ func (ml *multiLedger) NewChannelConfig(envConfigUpdate *cb.Envelope) (configtxa
 		return nil, fmt.Errorf("Failing initial channel config creation because of config update envelope unmarshaling error: %s", err)
 	}
 
+	if configUpdatePayload.Header == nil {
+		return nil, fmt.Errorf("Failed initial channel config creation because config update header was missing")
+	}
+	channelHeader, err := utils.UnmarshalChannelHeader(configUpdatePayload.Header.ChannelHeader)
+
 	configUpdate, err := configtx.UnmarshalConfigUpdate(configUpdateEnv.ConfigUpdate)
 	if err != nil {
 		return nil, fmt.Errorf("Failing initial channel config creation because of config update unmarshaling error: %s", err)
+	}
+
+	if configUpdate.ChannelId != channelHeader.ChannelId {
+		return nil, fmt.Errorf("Failing initial channel config creation: mismatched channel IDs: '%s' != '%s'", configUpdate.ChannelId, channelHeader.ChannelId)
 	}
 
 	if configUpdate.WriteSet == nil {

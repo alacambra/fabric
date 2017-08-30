@@ -18,10 +18,7 @@ package rest
 
 import (
 	"github.com/gorilla/mux"
-	"github.com/op/go-logging"
 )
-
-var logger = logging.MustGetLogger("configtxlator/rest")
 
 func NewRouter() *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
@@ -34,6 +31,9 @@ func NewRouter() *mux.Router {
 		Methods("POST")
 	router.
 		HandleFunc("/configtxlator/compute/update-from-configs", ComputeUpdateFromConfigs).
+		Methods("POST")
+	router.
+		HandleFunc("/configtxlator/config/verify", SanityCheckConfig).
 		Methods("POST")
 
 	return router
