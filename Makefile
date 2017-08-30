@@ -36,7 +36,6 @@
 #   - unit-test-clean - cleans unit test state (particularly from docker)
 
 PROJECT_NAME   = hyperledger/fabric
-<<<<<<< HEAD
 BASE_VERSION   = 1.0.1-javacc
 PREV_VERSION   = 1.0.0
 IS_RELEASE     = true
